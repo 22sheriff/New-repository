@@ -35,7 +35,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")  # set in Railway env vars
 
 async def get_db():
     conn = await asyncpg.connect(DATABASE_URL)
-    await conn.execute("SET search_path TO matola_cadastral, public")
+    await conn.execute("SET search_path TO matola_cadastral, extensions, public")
     return conn
 
 def serialize(row):
@@ -215,30 +215,23 @@ async def get_all_parcels_geojson(limit: int = Query(2000, le=5000)):
         )
         features = []
         for r in rows:
-            try:
-                lon = float(r["lon"]) if r["lon"] is not None else None
-                lat = float(r["lat"]) if r["lat"] is not None else None
-                if lon is None or lat is None:
-                    continue
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [lon, lat]
-                    },
-                    "properties": {
-                        "parcel_id": r["parcel_id"],
-                        "landuse": r["landuse"],
-                        "gvh": r["gvh"],
-                        "owner": r["applicants"],
-                        "size_ha": float(r["size_in_ha"]) if r["size_in_ha"] else None,
-                        "ownership": r["ownership_"],
-                        "dispute": r["dispute"],
-                        "dispute_ty": r["dispute_ty"],
-                    }
-                })
-            except Exception:
-                continue
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(r["lon"]), float(r["lat"])]  # [lng, lat] — correct GeoJSON order
+                },
+                "properties": {
+                    "parcel_id": r["parcel_id"],
+                    "landuse": r["landuse"],
+                    "gvh": r["gvh"],
+                    "owner": r["applicants"],
+                    "size_ha": float(r["size_in_ha"]) if r["size_in_ha"] else None,
+                    "ownership": r["ownership_"],
+                    "dispute": r["dispute"],
+                    "dispute_ty": r["dispute_ty"],
+                }
+            })
         return {"type": "FeatureCollection", "features": features}
     finally:
         await conn.close()
