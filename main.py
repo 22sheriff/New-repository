@@ -1,4 +1,4 @@
-"""
+""""
 Matola LandInfo — FastAPI Backend
 Connects to PostgreSQL with PostGIS support.
 """
@@ -98,7 +98,7 @@ async def list_parcels(
             " centroid_n, centroid_e, map_sheet, title_no,"
             " piece_no, registra_1, registra_2, registra_3,"
             " time_start, time_end, created_at, updated_at,"
-            " purpose, right, boundary_d, area, acres, x, y"
+            " purpose, \"right\", boundary_d, area, acres, x, y"
             " FROM matola_cadastral.matola_parcels"
             " " + where +
             " ORDER BY parcel_id"
