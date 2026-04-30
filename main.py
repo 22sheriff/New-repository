@@ -73,42 +73,41 @@ async def list_parcels(
         i = 1
 
         if search:
+            p = "$" + str(i)
             conditions.append(
-                f"(parcel_id ILIKE ${i} OR applicants ILIKE ${i} OR place ILIKE ${i} OR gvh ILIKE ${i} OR CAST(upin AS TEXT) ILIKE ${i})"
+                "(parcel_id ILIKE {p} OR applicants ILIKE {p} OR place ILIKE {p} OR gvh ILIKE {p} OR CAST(upin AS TEXT) ILIKE {p})".format(p=p)
             )
-            params.append(f"%{search}%")
+            params.append("%" + search + "%")
             i += 1
         if landuse:
-            conditions.append(f"landuse ILIKE ${i}")
-            params.append(f"%{landuse}%")
+            conditions.append("landuse ILIKE $" + str(i))
+            params.append("%" + landuse + "%")
             i += 1
         if gvh:
-            conditions.append(f"gvh ILIKE ${i}")
-            params.append(f"%{gvh}%")
+            conditions.append("gvh ILIKE $" + str(i))
+            params.append("%" + gvh + "%")
             i += 1
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         params += [limit, offset]
 
-        limit_ph = "$" + str(i)
-        offset_ph = "$" + str(i + 1)
-        query = """
-            SELECT gid, parcel_id, upin, applicants, landuse, gvh, place,
-                   size_in_ha, size_in_a, ownership_, dispute, dispute_ty,
-                   easement, easement_t, evidence_o, evidence_t,
-                   centroid_n, centroid_e, map_sheet, title_no,
-                   piece_no, registra_1, registra_2, registra_3,
-                   time_start, time_end, created_at, updated_at,
-                   purpose, right, boundary_d, area, acres, x, y
-            FROM matola_cadastral.matola_parcels
-            {where}
-            ORDER BY parcel_id
-            LIMIT {limit_ph} OFFSET {offset_ph}
-        """.format(where=where, limit_ph=limit_ph, offset_ph=offset_ph)
+        query = (
+            "SELECT gid, parcel_id, upin, applicants, landuse, gvh, place,"
+            " size_in_ha, size_in_a, ownership_, dispute, dispute_ty,"
+            " easement, easement_t, evidence_o, evidence_t,"
+            " centroid_n, centroid_e, map_sheet, title_no,"
+            " piece_no, registra_1, registra_2, registra_3,"
+            " time_start, time_end, created_at, updated_at,"
+            " purpose, right, boundary_d, area, acres, x, y"
+            " FROM matola_cadastral.matola_parcels"
+            " " + where +
+            " ORDER BY parcel_id"
+            " LIMIT $" + str(i) + " OFFSET $" + str(i + 1)
+        )
         rows = await conn.fetch(query, *params)
 
         count_row = await conn.fetchrow(
-            f"SELECT COUNT(*) FROM matola_cadastral.matola_parcels {where}",
+            "SELECT COUNT(*) FROM matola_cadastral.matola_parcels " + where,
             *params[:-2]
         )
 
