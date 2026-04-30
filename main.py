@@ -90,10 +90,9 @@ async def list_parcels(
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         params += [limit, offset]
 
-        limit_param = i
-        offset_param = i + 1
-        rows = await conn.fetch(
-            f"""
+        limit_ph = "$" + str(i)
+        offset_ph = "$" + str(i + 1)
+        query = """
             SELECT gid, parcel_id, upin, applicants, landuse, gvh, place,
                    size_in_ha, size_in_a, ownership_, dispute, dispute_ty,
                    easement, easement_t, evidence_o, evidence_t,
@@ -104,10 +103,9 @@ async def list_parcels(
             FROM matola_cadastral.matola_parcels
             {where}
             ORDER BY parcel_id
-            LIMIT ${limit_param} OFFSET ${offset_param}
-            """,
-            *params
-        )
+            LIMIT {limit_ph} OFFSET {offset_ph}
+        """.format(where=where, limit_ph=limit_ph, offset_ph=offset_ph)
+        rows = await conn.fetch(query, *params)
 
         count_row = await conn.fetchrow(
             f"SELECT COUNT(*) FROM matola_cadastral.matola_parcels {where}",
@@ -368,7 +366,8 @@ async def list_applicants(
         params += [limit, offset]
 
         rows = await conn.fetch(
-            f"SELECT * FROM matola_cadastral.applicants {where} ORDER BY registration_date DESC LIMIT ${i} OFFSET ${i+1}",
+            "SELECT * FROM matola_cadastral.applicants {where} ORDER BY registration_date DESC LIMIT {lp} OFFSET {op}".format(
+                where=where, lp="$"+str(i), op="$"+str(i+1)),
             *params
         )
         count = await conn.fetchval(f"SELECT COUNT(*) FROM matola_cadastral.applicants {where}", *params[:-2])
@@ -471,7 +470,8 @@ async def list_payments(
         i_limit = 2 if parcel_id else 1
 
         rows = await conn.fetch(
-            f"SELECT * FROM matola_cadastral.payments {where} ORDER BY created_at DESC LIMIT ${i_limit} OFFSET ${i_limit+1}",
+            "SELECT * FROM matola_cadastral.payments {where} ORDER BY created_at DESC LIMIT {lp} OFFSET {op}".format(
+                where=where, lp="$"+str(i_limit), op="$"+str(i_limit+1)),
             *params
         )
         return {"results": [serialize(r) for r in rows]}
