@@ -90,6 +90,8 @@ async def list_parcels(
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         params += [limit, offset]
 
+        limit_param = i
+        offset_param = i + 1
         rows = await conn.fetch(
             f"""
             SELECT gid, parcel_id, upin, applicants, landuse, gvh, place,
@@ -102,7 +104,7 @@ async def list_parcels(
             FROM matola_cadastral.matola_parcels
             {where}
             ORDER BY parcel_id
-            LIMIT ${i} OFFSET ${i+1}
+            LIMIT ${limit_param} OFFSET ${offset_param}
             """,
             *params
         )
