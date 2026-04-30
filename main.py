@@ -1,4 +1,4 @@
-""""
+"""
 Matola LandInfo — FastAPI Backend
 Connects to PostgreSQL with PostGIS support.
 """
@@ -98,7 +98,7 @@ async def list_parcels(
             " centroid_n, centroid_e, map_sheet, title_no,"
             " piece_no, registra_1, registra_2, registra_3,"
             " time_start, time_end, created_at, updated_at,"
-            " purpose, \"right\", boundary_d, area, acres, x, y"
+            " purpose, right, boundary_d, area, acres, x, y"
             " FROM matola_cadastral.matola_parcels"
             " " + where +
             " ORDER BY parcel_id"
@@ -215,23 +215,30 @@ async def get_all_parcels_geojson(limit: int = Query(2000, le=5000)):
         )
         features = []
         for r in rows:
-            features.append({
-                "type": "Feature",
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [float(r["lon"]), float(r["lat"])]  # [lng, lat] — correct GeoJSON order
-                },
-                "properties": {
-                    "parcel_id": r["parcel_id"],
-                    "landuse": r["landuse"],
-                    "gvh": r["gvh"],
-                    "owner": r["applicants"],
-                    "size_ha": float(r["size_in_ha"]) if r["size_in_ha"] else None,
-                    "ownership": r["ownership_"],
-                    "dispute": r["dispute"],
-                    "dispute_ty": r["dispute_ty"],
-                }
-            })
+            try:
+                lon = float(r["lon"]) if r["lon"] is not None else None
+                lat = float(r["lat"]) if r["lat"] is not None else None
+                if lon is None or lat is None:
+                    continue
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [lon, lat]
+                    },
+                    "properties": {
+                        "parcel_id": r["parcel_id"],
+                        "landuse": r["landuse"],
+                        "gvh": r["gvh"],
+                        "owner": r["applicants"],
+                        "size_ha": float(r["size_in_ha"]) if r["size_in_ha"] else None,
+                        "ownership": r["ownership_"],
+                        "dispute": r["dispute"],
+                        "dispute_ty": r["dispute_ty"],
+                    }
+                })
+            except Exception:
+                continue
         return {"type": "FeatureCollection", "features": features}
     finally:
         await conn.close()
