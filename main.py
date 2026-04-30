@@ -35,7 +35,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")  # set in Railway env vars
 
 async def get_db():
     conn = await asyncpg.connect(DATABASE_URL)
-    await conn.execute("SET search_path TO matola_cadastral, extensions, public")
+    await conn.execute("SET search_path TO matola_cadastral, public")
     return conn
 
 def serialize(row):
@@ -194,44 +194,42 @@ async def get_boundary():
 
 @app.get("/api/map/parcels-geojson")
 async def get_all_parcels_geojson(limit: int = Query(2000, le=5000)):
-    """Return all parcel centroids as WGS84 GeoJSON — PostGIS transforms UTM→WGS84 server-side."""
+    """Return all parcel polygons as WGS84 GeoJSON."""
     conn = await get_db()
     try:
         rows = await conn.fetch(
             """
             SELECT parcel_id, landuse, gvh, applicants, size_in_ha,
-                   ownership_, dispute, dispute_ty,
-                   -- Transform UTM 32736 centroid → WGS84 lon/lat
-                   ST_X(ST_Transform(
-                     ST_SetSRID(ST_MakePoint(centroid_e, centroid_n), 32736), 4326
-                   )) AS lon,
-                   ST_Y(ST_Transform(
-                     ST_SetSRID(ST_MakePoint(centroid_e, centroid_n), 32736), 4326
-                   )) AS lat
+                   ownership_, dispute, dispute_ty, registra_2,
+                   ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry
             FROM matola_cadastral.matola_parcels
-            WHERE centroid_e IS NOT NULL AND centroid_n IS NOT NULL
+            WHERE geom IS NOT NULL
             LIMIT $1
             """, limit
         )
         features = []
         for r in rows:
-            features.append({
-                "type": "Feature",
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [float(r["lon"]), float(r["lat"])]  # [lng, lat] — correct GeoJSON order
-                },
-                "properties": {
-                    "parcel_id": r["parcel_id"],
-                    "landuse": r["landuse"],
-                    "gvh": r["gvh"],
-                    "owner": r["applicants"],
-                    "size_ha": float(r["size_in_ha"]) if r["size_in_ha"] else None,
-                    "ownership": r["ownership_"],
-                    "dispute": r["dispute"],
-                    "dispute_ty": r["dispute_ty"],
-                }
-            })
+            try:
+                geom = r["geometry"]
+                if not geom:
+                    continue
+                features.append({
+                    "type": "Feature",
+                    "geometry": geom,
+                    "properties": {
+                        "parcel_id": r["parcel_id"],
+                        "landuse": r["landuse"],
+                        "gvh": r["gvh"],
+                        "owner": r["applicants"],
+                        "size_ha": float(r["size_in_ha"]) if r["size_in_ha"] else None,
+                        "ownership": r["ownership_"],
+                        "dispute": r["dispute"],
+                        "dispute_ty": r["dispute_ty"],
+                        "registra_2": r["registra_2"],
+                    }
+                })
+            except Exception:
+                continue
         return {"type": "FeatureCollection", "features": features}
     finally:
         await conn.close()
