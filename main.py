@@ -194,42 +194,44 @@ async def get_boundary():
 
 @app.get("/api/map/parcels-geojson")
 async def get_all_parcels_geojson(limit: int = Query(2000, le=5000)):
-    """Return all parcels as WGS84 GeoJSON polygons."""
+    """Return all parcel centroids as WGS84 GeoJSON — PostGIS transforms UTM→WGS84 server-side."""
     conn = await get_db()
     try:
         rows = await conn.fetch(
             """
             SELECT parcel_id, landuse, gvh, applicants, size_in_ha,
                    ownership_, dispute, dispute_ty,
-                   extensions.ST_AsGeoJSON(
-                     extensions.ST_Transform(geom::extensions.geometry, 4326)
-                   )::json AS geometry
+                   -- Transform UTM 32736 centroid → WGS84 lon/lat
+                   ST_X(ST_Transform(
+                     ST_SetSRID(ST_MakePoint(centroid_e, centroid_n), 32736), 4326
+                   )) AS lon,
+                   ST_Y(ST_Transform(
+                     ST_SetSRID(ST_MakePoint(centroid_e, centroid_n), 32736), 4326
+                   )) AS lat
             FROM matola_cadastral.matola_parcels
-            WHERE geom IS NOT NULL
+            WHERE centroid_e IS NOT NULL AND centroid_n IS NOT NULL
             LIMIT $1
             """, limit
         )
         features = []
         for r in rows:
-            try:
-                if r["geometry"] is None:
-                    continue
-                features.append({
-                    "type": "Feature",
-                    "geometry": r["geometry"] if isinstance(r["geometry"], dict) else json.loads(r["geometry"]),
-                    "properties": {
-                        "parcel_id": r["parcel_id"],
-                        "landuse": r["landuse"],
-                        "gvh": r["gvh"],
-                        "owner": r["applicants"],
-                        "size_ha": float(r["size_in_ha"]) if r["size_in_ha"] else None,
-                        "ownership": r["ownership_"],
-                        "dispute": r["dispute"],
-                        "dispute_ty": r["dispute_ty"],
-                    }
-                })
-            except Exception:
-                continue
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(r["lon"]), float(r["lat"])]  # [lng, lat] — correct GeoJSON order
+                },
+                "properties": {
+                    "parcel_id": r["parcel_id"],
+                    "landuse": r["landuse"],
+                    "gvh": r["gvh"],
+                    "owner": r["applicants"],
+                    "size_ha": float(r["size_in_ha"]) if r["size_in_ha"] else None,
+                    "ownership": r["ownership_"],
+                    "dispute": r["dispute"],
+                    "dispute_ty": r["dispute_ty"],
+                }
+            })
         return {"type": "FeatureCollection", "features": features}
     finally:
         await conn.close()
@@ -520,13 +522,18 @@ def _build_line_feature_collection(rows, extra_props_fn=None):
     """Helper: convert asyncpg rows with geojson geometry column to FeatureCollection."""
     features = []
     for r in rows:
-        geom = r["geometry"]
-        if geom is None:
+        try:
+            geom = r["geometry"]
+            if geom is None:
+                continue
+            if isinstance(geom, str):
+                geom = json.loads(geom)
+            props = {"gid": r["gid"], "id": r["id"]}
+            if extra_props_fn:
+                props.update(extra_props_fn(r))
+            features.append({"type": "Feature", "geometry": geom, "properties": props})
+        except Exception:
             continue
-        props = {"gid": r["gid"], "id": r["id"]}
-        if extra_props_fn:
-            props.update(extra_props_fn(r))
-        features.append({"type": "Feature", "geometry": geom, "properties": props})
     return {"type": "FeatureCollection", "features": features}
 
 
@@ -538,8 +545,11 @@ async def get_rivers_geojson():
         rows = await conn.fetch(
             """
             SELECT gid, id,
-                   ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry
+                   extensions.ST_AsGeoJSON(
+                     extensions.ST_Transform(geom::extensions.geometry, 4326)
+                   )::json AS geometry
             FROM matola_cadastral.rivers
+            WHERE geom IS NOT NULL
             """
         )
         return _build_line_feature_collection(rows)
@@ -555,10 +565,12 @@ async def get_rivers_buffer():
         rows = await conn.fetch(
             """
             SELECT gid, id,
-                   ST_AsGeoJSON(
-                     ST_Transform(ST_Buffer(geom, 15), 4326)
+                   extensions.ST_AsGeoJSON(
+                     extensions.ST_Transform(
+                       extensions.ST_Buffer(geom::extensions.geometry, 15), 4326)
                    )::json AS geometry
             FROM matola_cadastral.rivers
+            WHERE geom IS NOT NULL
             """
         )
         fc = _build_line_feature_collection(rows)
@@ -581,8 +593,11 @@ async def get_roads_geojson():
         rows = await conn.fetch(
             """
             SELECT gid, id, name,
-                   ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry
+                   extensions.ST_AsGeoJSON(
+                     extensions.ST_Transform(geom::extensions.geometry, 4326)
+                   )::json AS geometry
             FROM matola_cadastral.roads
+            WHERE geom IS NOT NULL
             """
         )
         return _build_line_feature_collection(rows, lambda r: {"name": r["name"]})
@@ -598,10 +613,12 @@ async def get_roads_buffer():
         rows = await conn.fetch(
             """
             SELECT gid, id, name,
-                   ST_AsGeoJSON(
-                     ST_Transform(ST_Buffer(geom, 10), 4326)
+                   extensions.ST_AsGeoJSON(
+                     extensions.ST_Transform(
+                       extensions.ST_Buffer(geom::extensions.geometry, 10), 4326)
                    )::json AS geometry
             FROM matola_cadastral.roads
+            WHERE geom IS NOT NULL
             """
         )
         fc = _build_line_feature_collection(rows, lambda r: {"name": r["name"]})
@@ -624,8 +641,12 @@ async def get_railway_geojson():
         rows = await conn.fetch(
             """
             SELECT gid, id,
-                   ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry
+                   extensions.ST_AsGeoJSON(
+                     extensions.ST_Transform(
+                       extensions.ST_SetSRID(geom::extensions.geometry, 32736), 4326)
+                   )::json AS geometry
             FROM matola_cadastral.railway
+            WHERE geom IS NOT NULL
             """
         )
         return _build_line_feature_collection(rows)
@@ -641,10 +662,13 @@ async def get_railway_buffer():
         rows = await conn.fetch(
             """
             SELECT gid, id,
-                   ST_AsGeoJSON(
-                     ST_Transform(ST_Buffer(geom, 20), 4326)
+                   extensions.ST_AsGeoJSON(
+                     extensions.ST_Transform(
+                       extensions.ST_Buffer(
+                         extensions.ST_SetSRID(geom::extensions.geometry, 32736), 20), 4326)
                    )::json AS geometry
             FROM matola_cadastral.railway
+            WHERE geom IS NOT NULL
             """
         )
         fc = _build_line_feature_collection(rows)
