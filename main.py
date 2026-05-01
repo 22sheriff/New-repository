@@ -194,14 +194,16 @@ async def get_boundary():
 
 @app.get("/api/map/parcels-geojson")
 async def get_all_parcels_geojson(limit: int = Query(2000, le=5000)):
-    """Return all parcel polygons as WGS84 GeoJSON."""
+    """Return all parcels as WGS84 GeoJSON polygons."""
     conn = await get_db()
     try:
         rows = await conn.fetch(
             """
             SELECT parcel_id, landuse, gvh, applicants, size_in_ha,
-                   ownership_, dispute, dispute_ty, registra_2,
-                   ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry
+                   ownership_, dispute, dispute_ty,
+                   extensions.ST_AsGeoJSON(
+                     extensions.ST_Transform(geom::extensions.geometry, 4326)
+                   )::json AS geometry
             FROM matola_cadastral.matola_parcels
             WHERE geom IS NOT NULL
             LIMIT $1
@@ -210,12 +212,11 @@ async def get_all_parcels_geojson(limit: int = Query(2000, le=5000)):
         features = []
         for r in rows:
             try:
-                geom = r["geometry"]
-                if not geom:
+                if r["geometry"] is None:
                     continue
                 features.append({
                     "type": "Feature",
-                    "geometry": geom,
+                    "geometry": r["geometry"],
                     "properties": {
                         "parcel_id": r["parcel_id"],
                         "landuse": r["landuse"],
@@ -225,7 +226,6 @@ async def get_all_parcels_geojson(limit: int = Query(2000, le=5000)):
                         "ownership": r["ownership_"],
                         "dispute": r["dispute"],
                         "dispute_ty": r["dispute_ty"],
-                        "registra_2": r["registra_2"],
                     }
                 })
             except Exception:
