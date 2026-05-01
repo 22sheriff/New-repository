@@ -216,7 +216,7 @@ async def get_all_parcels_geojson(limit: int = Query(2000, le=5000)):
                     continue
                 features.append({
                     "type": "Feature",
-                    "geometry": r["geometry"],
+                    "geometry": r["geometry"] if isinstance(r["geometry"], dict) else json.loads(r["geometry"]),
                     "properties": {
                         "parcel_id": r["parcel_id"],
                         "landuse": r["landuse"],
