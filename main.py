@@ -522,18 +522,13 @@ def _build_line_feature_collection(rows, extra_props_fn=None):
     """Helper: convert asyncpg rows with geojson geometry column to FeatureCollection."""
     features = []
     for r in rows:
-        try:
-            geom = r["geometry"]
-            if geom is None:
-                continue
-            if isinstance(geom, str):
-                geom = json.loads(geom)
-            props = {"gid": r["gid"], "id": r["id"]}
-            if extra_props_fn:
-                props.update(extra_props_fn(r))
-            features.append({"type": "Feature", "geometry": geom, "properties": props})
-        except Exception:
+        geom = r["geometry"]
+        if geom is None:
             continue
+        props = {"gid": r["gid"], "id": r["id"]}
+        if extra_props_fn:
+            props.update(extra_props_fn(r))
+        features.append({"type": "Feature", "geometry": geom, "properties": props})
     return {"type": "FeatureCollection", "features": features}
 
 
@@ -545,11 +540,8 @@ async def get_rivers_geojson():
         rows = await conn.fetch(
             """
             SELECT gid, id,
-                   extensions.ST_AsGeoJSON(
-                     extensions.ST_Transform(geom::extensions.geometry, 4326)
-                   )::json AS geometry
+                   ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry
             FROM matola_cadastral.rivers
-            WHERE geom IS NOT NULL
             """
         )
         return _build_line_feature_collection(rows)
@@ -565,12 +557,10 @@ async def get_rivers_buffer():
         rows = await conn.fetch(
             """
             SELECT gid, id,
-                   extensions.ST_AsGeoJSON(
-                     extensions.ST_Transform(
-                       extensions.ST_Buffer(geom::extensions.geometry, 15), 4326)
+                   ST_AsGeoJSON(
+                     ST_Transform(ST_Buffer(geom, 15), 4326)
                    )::json AS geometry
             FROM matola_cadastral.rivers
-            WHERE geom IS NOT NULL
             """
         )
         fc = _build_line_feature_collection(rows)
@@ -593,11 +583,8 @@ async def get_roads_geojson():
         rows = await conn.fetch(
             """
             SELECT gid, id, name,
-                   extensions.ST_AsGeoJSON(
-                     extensions.ST_Transform(geom::extensions.geometry, 4326)
-                   )::json AS geometry
+                   ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry
             FROM matola_cadastral.roads
-            WHERE geom IS NOT NULL
             """
         )
         return _build_line_feature_collection(rows, lambda r: {"name": r["name"]})
@@ -613,12 +600,10 @@ async def get_roads_buffer():
         rows = await conn.fetch(
             """
             SELECT gid, id, name,
-                   extensions.ST_AsGeoJSON(
-                     extensions.ST_Transform(
-                       extensions.ST_Buffer(geom::extensions.geometry, 10), 4326)
+                   ST_AsGeoJSON(
+                     ST_Transform(ST_Buffer(geom, 10), 4326)
                    )::json AS geometry
             FROM matola_cadastral.roads
-            WHERE geom IS NOT NULL
             """
         )
         fc = _build_line_feature_collection(rows, lambda r: {"name": r["name"]})
@@ -641,12 +626,8 @@ async def get_railway_geojson():
         rows = await conn.fetch(
             """
             SELECT gid, id,
-                   extensions.ST_AsGeoJSON(
-                     extensions.ST_Transform(
-                       extensions.ST_SetSRID(geom::extensions.geometry, 32736), 4326)
-                   )::json AS geometry
+                   ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry
             FROM matola_cadastral.railway
-            WHERE geom IS NOT NULL
             """
         )
         return _build_line_feature_collection(rows)
@@ -662,13 +643,10 @@ async def get_railway_buffer():
         rows = await conn.fetch(
             """
             SELECT gid, id,
-                   extensions.ST_AsGeoJSON(
-                     extensions.ST_Transform(
-                       extensions.ST_Buffer(
-                         extensions.ST_SetSRID(geom::extensions.geometry, 32736), 20), 4326)
+                   ST_AsGeoJSON(
+                     ST_Transform(ST_Buffer(geom, 20), 4326)
                    )::json AS geometry
             FROM matola_cadastral.railway
-            WHERE geom IS NOT NULL
             """
         )
         fc = _build_line_feature_collection(rows)
